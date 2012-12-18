@@ -243,6 +243,7 @@ class socksocket(_orgsocket):
                     ipaddr = _socket.inet_aton(_socket.gethostbyname(destaddr))
                     req = req + "\x01" + ipaddr
                 except _socket.gaierror:
+                    # Fallback to remote resolution on local resolver issues
                     ipaddr = None
                     req = req + "\x03" + chr(len(destaddr)) + destaddr
 
@@ -312,6 +313,7 @@ class socksocket(_orgsocket):
                 try:
                     ipaddr = _socket.inet_aton(_socket.gethostbyname(destaddr))
                 except _socket.gaierror:
+                    # Fallback to remote resolution on local resolver issues
                     ipaddr = "\x00\x00\x00\x01"
                     rmtrslv = True
         # Construct the request packet
