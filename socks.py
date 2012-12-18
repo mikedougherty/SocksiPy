@@ -118,7 +118,7 @@ def setdefaultproxy(proxytype = None, addr = None, port = None, rdns = True, use
     global _defaultproxy
     _defaultproxy = (proxytype, addr, port, rdns, username, password)
 
-    def wrapmodule(module):
+def wrapmodule(module):
     """wrapmodule(module)
 
     Attempts to replace a module's socket library with a SOCKS socket. Must set
