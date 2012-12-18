@@ -118,6 +118,19 @@ def setdefaultproxy(proxytype = None, addr = None, port = None, rdns = True, use
     global _defaultproxy
     _defaultproxy = (proxytype, addr, port, rdns, username, password)
 
+def wrapmodule(module):
+    """wrapmodule(module)
+
+    Attempts to replace a module's socket library with a SOCKS socket. Must set
+    a default proxy using setdefaultproxy(...) first.
+    This will only work on modules that import socket directly into the namespace;
+    most of the Python Standard Library falls into this category.
+    """ 
+    if _defaultproxy is not None:
+        module.socket.socket = socksocket
+    else:
+        raise GeneralProxyError((4, "no proxy specified"))
+
 class socksocket(_orgsocket):
     """socksocket([family[, type[, proto]]]) -> socket object
 
@@ -129,7 +142,7 @@ class socksocket(_orgsocket):
     def __init__(self, family = _socket.AF_INET, type = _socket.SOCK_STREAM, proto = 0, _sock = None):
         _orgsocket.__init__(self, family, type, proto, _sock)
 
-        if _defaultproxy != None:
+        if _defaultproxy is not None:
             self.__proxy = _defaultproxy
         else:
             self.__proxy = (None, None, None, None, None, None)
@@ -171,7 +184,7 @@ class socksocket(_orgsocket):
         Negotiates a connection through a SOCKS5 server.
         """
         # First we'll send the authentication packages we support.
-        if (self.__proxy[4] != None) and (self.__proxy[5] != None):
+        if (self.__proxy[4] is not None) and (self.__proxy[5] is not None):
             # The username/password details were supplied to the
             # setproxy method so we support the USERNAME/PASSWORD
             # authentication (in addition to the standard none).
@@ -230,6 +243,7 @@ class socksocket(_orgsocket):
                     ipaddr = _socket.inet_aton(_socket.gethostbyname(destaddr))
                     req = req + "\x01" + ipaddr
                 except _socket.gaierror:
+                    # Fallback to remote resolution on local resolver issues
                     ipaddr = None
                     req = req + "\x03" + chr(len(destaddr)) + destaddr
 
@@ -258,7 +272,7 @@ class socksocket(_orgsocket):
             raise GeneralProxyError((1, _generalerrors[1]))
         boundport = struct.unpack(">H", self.__recvall(2))[0]
         self.__proxysockname = (boundaddr, boundport)
-        if ipaddr != None:
+        if ipaddr is not None:
             self.__proxypeername = (_socket.inet_ntoa(ipaddr), destport)
         else:
             self.__proxypeername = (destaddr, destport)
@@ -299,12 +313,13 @@ class socksocket(_orgsocket):
                 try:
                     ipaddr = _socket.inet_aton(_socket.gethostbyname(destaddr))
                 except _socket.gaierror:
+                    # Fallback to remote resolution on local resolver issues
                     ipaddr = "\x00\x00\x00\x01"
                     rmtrslv = True
         # Construct the request packet
         req = "\x04\x01" + struct.pack(">H", destport) + ipaddr
         # The username parameter is considered userid for SOCKS4
-        if self.__proxy[4] != None:
+        if self.__proxy[4] is not None:
             req = req + self.__proxy[4]
         req = req + "\x00"
         # DNS name if remote resolving is required
@@ -329,7 +344,7 @@ class socksocket(_orgsocket):
                 raise Socks4Error((94, _socks4errors[4]))
         # Get the bound address/port
         self.__proxysockname = (_socket.inet_ntoa(resp[4:]), struct.unpack(">H", resp[2:4])[0])
-        if rmtrslv != None:
+        if rmtrslv is not None:
             self.__proxypeername = (_socket.inet_ntoa(ipaddr), destport)
         else:
             self.__proxypeername = (destaddr, destport)
@@ -423,7 +438,7 @@ class socksocket(_orgsocket):
             if self.__proxy[0] in stuff:
                 def_port, negotiate = stuff[self.__proxy[0]]
 
-                if self.__proxy[2] != None:
+                if self.__proxy[2] is not None:
                     portnum = self.__proxy[2]
                 else:
                     portnum = def_port
@@ -435,7 +450,7 @@ class socksocket(_orgsocket):
 
                 log.debug('negotiating proxy for destpair %r: %r, password=%s', destpair, self.__proxy[:-1], bool(self.__proxy[-1]))
                 negotiate(destpair[0], destpair[1])
-            elif self.__proxy[0] == None:
+            elif self.__proxy[0] is None:
                 log.debug('No proxy settings. connecting destpair %r', destpair)
                 return_val = connector(self, (destpair[0], destpair[1]))
             else:
