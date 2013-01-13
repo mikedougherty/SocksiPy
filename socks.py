@@ -56,26 +56,34 @@ PROXY_TYPE_HTTPS = 4
 _defaultproxy = None
 _orgsocket = _socket.socket
 
+
 class ProxyError(_socket.error):
     def __init__(self, *args):
         self.value = args
         _socket.error.__init__(self, *args)
+
     def __str__(self):
         return repr(self.value)
+
     def __repr__(self):
         return '%s(%r)' % (type(self).__name__, repr(self.value))
+
 
 class GeneralProxyError(ProxyError):
     pass
 
+
 class Socks5AuthError(ProxyError):
     pass
+
 
 class Socks5Error(ProxyError):
     pass
 
+
 class Socks4Error(ProxyError):
     pass
+
 
 class HTTPError(ProxyError):
     pass
@@ -110,6 +118,7 @@ _socks4errors = ("request granted",
           "request rejected because the client program and identd report different user-ids",
           "unknown error")
 
+
 def setdefaultproxy(proxytype = None, addr = None, port = None, rdns = True, username = None, password = None):
     """setdefaultproxy(proxytype, addr[, port[, rdns[, username[, password]]]])
     Sets a default proxy which all further socksocket objects will use,
@@ -118,6 +127,7 @@ def setdefaultproxy(proxytype = None, addr = None, port = None, rdns = True, use
     global _defaultproxy
     _defaultproxy = (proxytype, addr, port, rdns, username, password)
 
+
 def wrapmodule(module):
     """wrapmodule(module)
 
@@ -125,11 +135,12 @@ def wrapmodule(module):
     a default proxy using setdefaultproxy(...) first.
     This will only work on modules that import socket directly into the namespace;
     most of the Python Standard Library falls into this category.
-    """ 
+    """
     if _defaultproxy is not None:
         module.socket.socket = socksocket
     else:
         raise GeneralProxyError((4, "no proxy specified"))
+
 
 class socksocket(_orgsocket):
     """socksocket([family[, type[, proto]]]) -> socket object
