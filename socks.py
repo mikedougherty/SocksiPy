@@ -34,6 +34,7 @@ from socket import *
 from socket import _fileobject
 from socket import create_connection
 from socket import ssl
+import base64
 import socket as _socket
 import struct
 import time
@@ -52,6 +53,7 @@ PROXY_TYPE_SOCKS4 = 1
 PROXY_TYPE_SOCKS5 = 2
 PROXY_TYPE_HTTP = 3
 PROXY_TYPE_HTTPS = 4
+PROXY_TYPE_HTTP_NO_TUNNEL = 5
 
 _defaultproxy = None
 _orgsocket = _socket.socket
@@ -159,6 +161,7 @@ class socksocket(_orgsocket):
             self.__proxy = (None, None, None, None, None, None)
         self.__proxysockname = None
         self.__proxypeername = None
+        self.__httptunnel = True
 
     def __recvall(self, bytes):
         """__recvall(bytes) -> data
@@ -170,6 +173,41 @@ class socksocket(_orgsocket):
             data += self.recv(bytes - len(data))
             time.sleep(.001)
         return data
+
+    def sendall(self, content, *args):
+        """ override socket.socket.sendall method to rewrite the header
+        for non-tunneling proxies if needed
+        """
+        if not self.__httptunnel:
+            content = self.__rewriteproxy(content)
+        return super(socksocket, self).sendall(content, *args)
+
+    def __rewriteproxy(self, header):
+        """ rewrite HTTP request headers to support non-tunneling proxies
+        (i.e. those which do not support the CONNECT method).
+        This only works for HTTP (not HTTPS) since HTTPS requires tunneling.
+        """
+        host, endpt = None, None
+        hdrs = header.split("\r\n")
+        for hdr in hdrs:
+            if hdr.lower().startswith("host:"):
+                host = hdr
+            elif hdr.lower().startswith("get") or hdr.lower().startswith("post"):
+                endpt = hdr
+        if host and endpt:
+            hdrs.remove(host)
+            hdrs.remove(endpt)
+            host = host.split(" ")[1]
+            endpt = endpt.split(" ")
+            if (self.__proxy[4] != None and self.__proxy[5] != None):
+                hdrs.insert(0, self.__getauthheader())
+            hdrs.insert(0, "Host: %s" % host)
+            hdrs.insert(0, "%s http://%s%s %s" % (endpt[0], host, endpt[1], endpt[2]))
+        return "\r\n".join(hdrs)
+
+    def __getauthheader(self):
+        auth = self.__proxy[4] + ":" + self.__proxy[5]
+        return "Proxy-Authorization: Basic " + base64.b64encode(auth)
 
     def setproxy(self, proxytype = None, addr = None, port = None, rdns = True, username = None, password = None):
         """setproxy(proxytype, addr[, port[, rdns[, username[, password]]]])
@@ -381,9 +419,13 @@ class socksocket(_orgsocket):
             except _socket.gaierror:
                 pass
 
-        self.sendall("CONNECT " + addr + ":" + str(destport) + " HTTP/1.1\r\n" +
-                     "Host: " + destaddr + "\r\n" +
-                     self.__httpauthstring() + "\r\n")
+        headers =  ["CONNECT ", addr, ":", str(destport), " HTTP/1.1\r\n"]
+        headers += ["Host: ", destaddr, "\r\n"]
+        if (self.__proxy[4] != None and self.__proxy[5] != None):
+            headers += [self.__getauthheader(), "\r\n"]
+        headers.append("\r\n")
+        self.sendall("".join(headers).encode())
+
         # We read the response until we get the string "\r\n\r\n"
         last = resp = self.recv(1)
         while len(resp) < (32 * 1024) and last and resp.find("\r\n\r\n") == -1:
@@ -411,14 +453,12 @@ class socksocket(_orgsocket):
         self.__proxysockname = ("0.0.0.0", 0)
         self.__proxypeername = (addr, destport)
 
-    def __httpauthstring(self):
-        (proxytype, addr, port, rdns, username, password) = self.__proxy
-        if all((username, password)):
-            raw = "%s:%s" % (username, password)
-            auth = 'Basic %s' % ''.join(raw.encode('base-64').strip().split())
-            return 'Proxy-Authorization: %s\r\n' % auth
+    def __negotiatehttp_no_tunnel(self, destaddr, destport):
+        _orgsocket.connect(self, (self.__proxy[1], portnum))
+        if destpair[1] == 443:
+            self.__negotiatehttp(destpair[0], destpair[1])
         else:
-            return ''
+            self.__httptunnel = False
 
     def connect(self, destpair):
         if self.family == _socket.AF_INET and self.type == _socket.SOCK_STREAM:
@@ -444,6 +484,7 @@ class socksocket(_orgsocket):
                      PROXY_TYPE_SOCKS4: (1080, self.__negotiatesocks4),
                      PROXY_TYPE_HTTP  : (8080, self.__negotiatehttp),
                      PROXY_TYPE_HTTPS : (8080, self.__negotiatehttps),
+                     PROXY_TYPE_HTTP_NO_TUNNEL: (8080, self.__negotiatehttp_no_tunnel),
                      }
 
             if self.__proxy[0] in stuff:
